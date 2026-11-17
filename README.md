@@ -7,9 +7,19 @@ maintainer: [World Compute](https://github.com/worldcompute001), team@worldcompu
 **Prerelease:** not published to PyPI. Production SDK authentication is deployed.
 The standalone quickstart has passed against the remote simulated twin: OAuth
 login, LiveKit admission, measured reset completion, and stop/release. Physical
-SDK motion has not been tested. Sign in using OAuth PKCE; no API key is required.
+SDK reset also passed on SO100 with all six measured joints within 0.5° of the saved pose, followed by stop/release. Other physical command modes are not qualified by that reset test. Sign in using OAuth PKCE; no API key is required.
 
 ## Install and run
+
+Until the first PyPI release, use the source installation below. Once version
+`0.1.0a1` is published, install and run without cloning:
+
+```bash
+python -m pip install worldcompute==0.1.0a1
+worldcompute-quickstart
+```
+
+This is an alpha release; pin the version when evaluating the SDK.
 
 Requires Python 3.11+, an authorized World Compute account, an online station,
 and outbound HTTPS/WebRTC connectivity. Use a local desktop; login listens only
@@ -21,8 +31,6 @@ remote notebook without forwarding its loopback callback.
 ```bash
 git clone https://github.com/worldcompute001/worldcompute-python.git
 cd worldcompute-python
-# Until the PRs merge, use the complete review branch:
-git switch sdk/quickstart
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -e .
@@ -103,5 +111,5 @@ python -m build
 
 Tests use isolated HTTP/LiveKit doubles and do not qualify physical movement.
 Backend tests separately exercise OAuth and admission. Live end-to-end simulation
-and attended physical testing must be reported separately. PyPI publishing is not
-configured; release ownership and credentials must be confirmed before publishing.
+and attended physical testing must be reported separately. See [release instructions](docs/releasing.md) for GitHub-to-PyPI trusted publishing.
+Publishing requires the World Compute PyPI owner to register the publisher first.
