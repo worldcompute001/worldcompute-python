@@ -17,6 +17,7 @@ class WorldCompute:
         self.base_url = base_url.rstrip('/')
         self.access_token = access_token or os.environ.get('WC_ACCESS_TOKEN')
         self._refresh_token = None
+        self._resource = self.base_url + "/mcp"
         self._expires = 0
         self._refresh_lock = asyncio.Lock()
         self.http = http or httpx.AsyncClient(base_url=self.base_url, timeout=10, follow_redirects=False)
@@ -31,6 +32,7 @@ class WorldCompute:
 
     def _set_tokens(self, tokens):
         self.access_token = tokens['access_token']
+        self._resource = tokens.get('_resource', self._resource)
         self._refresh_token = tokens.get('refresh_token', self._refresh_token)
         self._expires = time.monotonic() + tokens.get('expires_in', 900)
 
@@ -39,7 +41,7 @@ class WorldCompute:
             if self._refresh_token and time.monotonic() >= self._expires - 60:
                 response = await self.http.post('/oauth/token', data={
                     'grant_type':'refresh_token', 'refresh_token':self._refresh_token,
-                    'client_id':'world-compute-python', 'resource':self.base_url+'/mcp'})
+                    'client_id':'world-compute-python', 'resource':self._resource})
                 if response.status_code != 200:
                     raise ControlsError('Login expired; authenticate again')
                 self._set_tokens(response.json())
@@ -71,6 +73,14 @@ class WorldCompute:
         try:
             live = await self._request('POST', '/api/sdk/v1/live-token', {})
             await room.connect(live['url'], live['token'])
+            # The production station joins on demand. Wait before requesting its
+            # ten-second admission ticket; never retry an uncertain command.
+            station = live.get('station', 'canary:station')
+            deadline = time.monotonic() + 30
+            while station not in room.remote_participants:
+                if time.monotonic() >= deadline:
+                    raise ControlsError('Station did not join LiveKit within 30 seconds')
+                await asyncio.sleep(.1)
             admission = await self._request('POST', '/api/sdk/v1/robots/'+quote(robot_id,safe='')+'/sessions', {
                 'request_id':str(uuid4()), 'mode':mode, 'identity':live['identity'], 'binding':live['binding']})
             created = json.loads(await room.local_participant.perform_rpc(
