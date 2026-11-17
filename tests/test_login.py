@@ -19,6 +19,7 @@ async def test_login_checks_callback_state_and_pkce(monkeypatch):
             for _ in range(50):
                 if urls:break
                 await asyncio.sleep(.01)
+            assert urls[0].startswith('https://issuer.test/oauth/auth?')
             query=parse_qs(urlparse(urls[0]).query)
             assert query['client_id']==['world-compute-python']
             assert 'robot:control' not in query['scope'][0]

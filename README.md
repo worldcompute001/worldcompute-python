@@ -13,7 +13,9 @@ or required: sign in to your World Compute account using OAuth PKCE in your brow
 
 Requires Python 3.11+, an authorized World Compute account, an online station,
 and outbound HTTPS/WebRTC connectivity. Use a local desktop; login listens only
-on 127.0.0.1:8765. That port must be free. It does not work through an arbitrary
+on 127.0.0.1:8765. That port must be free. Complete login within ten minutes; use the newly opened
+page rather than an older sign-in tab. Login starts on the canonical OAuth issuer
+to preserve its cookies across account sign-in. It does not work through an arbitrary
 remote notebook without forwarding its loopback callback.
 
 ```bash

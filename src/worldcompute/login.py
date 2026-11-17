@@ -11,7 +11,7 @@ CLIENT_ID = 'world-compute-python'
 REDIRECT = 'http://127.0.0.1:8765/callback'
 
 
-async def authorize(http, origin, *, physical=False, open_browser=True, timeout=180):
+async def authorize(http, origin, *, physical=False, open_browser=True, timeout=600):
     metadata = await http.get('/.well-known/oauth-protected-resource/mcp')
     metadata.raise_for_status()
     resource = metadata.json()['resource']
@@ -49,7 +49,9 @@ async def authorize(http, origin, *, physical=False, open_browser=True, timeout=
             await writer.wait_closed()
 
     server = await asyncio.start_server(callback, '127.0.0.1', 8765, limit=8192)
-    url = origin+'/oauth/auth?'+urlencode({'client_id':CLIENT_ID, 'response_type':'code',
+    # Account sign-in returns to the canonical issuer; start there so its
+    # host-only interaction cookie survives that round trip.
+    url = issuer.rstrip('/')+'/auth?'+urlencode({'client_id':CLIENT_ID, 'response_type':'code',
         'redirect_uri':REDIRECT, 'scope':'robot:read simulator:control offline_access'+(' robot:control' if physical else ''),
         'resource':resource, 'state':state, 'code_challenge':challenge, 'code_challenge_method':'S256'})
     try:
@@ -57,7 +59,10 @@ async def authorize(http, origin, *, physical=False, open_browser=True, timeout=
         if open_browser:
             webbrowser.open(url)
         async with server:
-            code = await asyncio.wait_for(future, timeout)
+            try:
+                code = await asyncio.wait_for(future, timeout)
+            except asyncio.TimeoutError as error:
+                raise ControlsError('Login timed out; rerun the quickstart for a fresh sign-in page') from error
         response = await http.post('/oauth/token', data={'grant_type':'authorization_code',
             'client_id':CLIENT_ID,'redirect_uri':REDIRECT,'code':code,
             'code_verifier':verifier,'resource':resource})
