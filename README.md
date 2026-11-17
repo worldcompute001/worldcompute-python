@@ -4,15 +4,14 @@ Control a registered World Compute robot from a Python program on your computer.
 Use the same API for its simulated twin and physical arm. Source and primary
 maintainer: [World Compute](https://github.com/worldcompute001), team@worldcompute.org.
 
-**Prerelease:** not published to PyPI. Production SDK authentication is deployed.
+**Alpha release:** [worldcompute 0.1.0a1](https://pypi.org/project/worldcompute/0.1.0a1/) is available on PyPI. Production SDK authentication is deployed.
 The standalone quickstart has passed against the remote simulated twin: OAuth
 login, LiveKit admission, measured reset completion, and stop/release. Physical
 SDK reset also passed on SO100 with all six measured joints within 0.5° of the saved pose, followed by stop/release. Other physical command modes are not qualified by that reset test. Sign in using OAuth PKCE; no API key is required.
 
 ## Install and run
 
-Until the first PyPI release, use the source installation below. Once version
-`0.1.0a1` is published, install and run without cloning:
+Install and run without cloning:
 
 ```bash
 python -m pip install worldcompute==0.1.0a1
