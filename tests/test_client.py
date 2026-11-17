@@ -4,7 +4,7 @@ import pytest
 from worldcompute import WorldCompute, ControlsError
 
 class Room:
-    def __init__(self): self.local_participant=self;self.calls=[];self.disconnected=False
+    def __init__(self): self.remote_participants={"canary:station":object()};self.local_participant=self;self.calls=[];self.disconnected=False
     async def connect(self,*args): pass
     async def disconnect(self):self.disconnected=True
     async def perform_rpc(self,**kwargs):

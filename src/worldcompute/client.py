@@ -73,6 +73,14 @@ class WorldCompute:
         try:
             live = await self._request('POST', '/api/sdk/v1/live-token', {})
             await room.connect(live['url'], live['token'])
+            # The production station joins on demand. Wait before requesting its
+            # ten-second admission ticket; never retry an uncertain command.
+            station = live.get('station', 'canary:station')
+            deadline = time.monotonic() + 30
+            while station not in room.remote_participants:
+                if time.monotonic() >= deadline:
+                    raise ControlsError('Station did not join LiveKit within 30 seconds')
+                await asyncio.sleep(.1)
             admission = await self._request('POST', '/api/sdk/v1/robots/'+quote(robot_id,safe='')+'/sessions', {
                 'request_id':str(uuid4()), 'mode':mode, 'identity':live['identity'], 'binding':live['binding']})
             created = json.loads(await room.local_participant.perform_rpc(
