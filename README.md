@@ -7,7 +7,7 @@ maintainer: [World Compute](https://github.com/worldcompute001), team@worldcompu
 **Alpha release:** [worldcompute 0.1.0a1](https://pypi.org/project/worldcompute/0.1.0a1/) is available on PyPI. Production SDK authentication is deployed.
 The standalone quickstart has passed against the remote simulated twin: OAuth
 login, LiveKit admission, measured reset completion, and stop/release. Physical
-SDK reset also passed on SO100 with all six measured joints within 0.5° of the saved pose, followed by stop/release. Other physical command modes are not qualified by that reset test. Sign in using OAuth PKCE; no API key is required.
+SDK reset also passed on SO100 with all six measured joints within 0.5° of the saved pose, followed by stop/release. Physical validation covered that reset. See the [World Compute Python guide](https://worldcompute.org/docs/controls) for setup and command examples.
 
 ## Install and run
 
@@ -20,8 +20,9 @@ worldcompute-quickstart
 
 This is an alpha release; pin the version when evaluating the SDK.
 
-Requires Python 3.11+, an authorized World Compute account, an online station,
-and outbound HTTPS/WebRTC connectivity. Use a local desktop; login listens only
+Requires Python 3.11+, an online station, and outbound HTTPS/WebRTC connectivity.
+Anyone can create a World Compute account and sign in. Browser sign-in and consent
+give the SDK scoped, in-memory tokens through OAuth PKCE. There is no API key to create. Use a local desktop; login listens only
 on 127.0.0.1:8765. That port must be free. Complete login within ten minutes; use the newly opened
 page rather than an older sign-in tab. Login starts on the canonical OAuth issuer
 to preserve its cookies across account sign-in. It does not work through an arbitrary
@@ -41,14 +42,16 @@ LiveKit, resets the **simulation**, polls measured completion, and stops/release
 the session. Simulation does not claim or move the physical arm. The station must
 still be connected. The roster is configuration, not proof of motor readiness.
 
-To command hardware, first check the arm and clear its path, then run:
+After the simulation succeeds, have an operator watch the arm and clear its path.
+Use the ID of the arm you intend to move. For the installed SDK, run the physical reset with:
 
 ```bash
-python examples/quickstart.py --robot so100 --physical
+worldcompute-quickstart --robot so100 --physical
 ```
 
-Physical mode requires an explicit confirmation and grants robot:control during
-login. It uses the existing exclusive queue and calibrated limits. Reset is not
+Type `RESET` and approve physical control in the browser. Physical sessions share
+the playground queue. If another session owns the arm, wait for your turn.
+A physical reset requires fresh motor readings and valid calibrated limits. Reset is not
 an out-of-range recovery routine; missing motor limits must be resolved by the
 operator. Stop holds position; it does not remove motor power.
 
@@ -62,10 +65,12 @@ async def main():
     async with WorldCompute() as wc:
         await wc.login()  # use physical=True only when you need real motion
         robots = await wc.robots()
+        if not robots:
+            raise RuntimeError("No registered robot available")
         async with wc.robot(robots[0]['id'], mode="simulation") as robot:
-            request = await robot.reset()
-            result = await robot.wait(request)
-            print(result)
+            request_id = await robot.reset()
+            print("Accepted request:", request_id)
+            print("Measured completion:", await robot.wait(request_id))
 
 asyncio.run(main())
 ```
@@ -80,7 +85,7 @@ Never share tokens, use browser cookies or embed the confidential ChatGPT secret
 | Method | Input / behavior |
 |---|---|
 | `target(positions)` | Named joint targets, radians |
-| `sequence_targets(waypoints)` | List of `{positions, pause_ms?, timeout_ms?}` |
+| `sequence_targets(waypoints)` | List of waypoints with a `positions` dictionary and optional `pause_ms` and `timeout_ms` |
 | `follow(positions)` | Reliable updates of named target positions |
 | `jog(velocities)` | Initialize a velocity stream, radians/second |
 | `publish_jog(velocities)` | Latest-input data packets after jog initialization |
@@ -96,7 +101,7 @@ and attempt stop before disconnect. Hold before changing action types. If renewa
 or transport fails, new inputs are blocked; there is no automatic replay.
 
 `OutcomeUnknown.request_id` identifies an uncertain command. Inspect the original
-execution rather than resending under a new ID. A transport failure may also leave
+execution in `(await robot.state())["executions"]` when state is reachable. Avoid automatic retries. A transport failure may also leave
 Stop unconfirmed; the SDK raises instead of claiming the arm stopped. A powered
 robot requires an attended hardware stop procedure if communications are lost.
 
