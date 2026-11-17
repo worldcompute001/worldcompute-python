@@ -44,3 +44,7 @@ publish a corrected version. No hardware or service rollout is involved.
   all six joints within 0.5 degrees, session stopped/released.
 - These runs used the source SDK. Release wheel installation and public-index
   installation are separate checks; neither implies all physical modes are tested.
+- Release wheel `0.1.0a1`: installed with dependencies into a fresh virtualenv,
+  outside the source checkout. Installed `worldcompute-quickstart` completed
+  remote simulation request `8c047284-e223-4e2d-be99-1e85c4d103f5`, measured all
+  six targets, then stopped/released. Public PyPI installation remains pending.
