@@ -1,4 +1,5 @@
 import json
+import asyncio
 import httpx
 import pytest
 from worldcompute import WorldCompute, ControlsError
@@ -16,11 +17,14 @@ class Room:
 
 async def test_standalone_admission_and_cleanup():
     requests=[];room=Room()
+    room.remote_participants.clear()
+    asyncio.get_running_loop().call_later(.15, lambda: room.remote_participants.update({"canary:station":object()}))
     def respond(req):
         requests.append(req)
         assert req.headers['authorization']=='Bearer token'
         if req.url.path.endswith('/live-token'):data={'url':'wss://live','token':'live','identity':'i','binding':'b'}
         elif req.url.path.endswith('/sessions'):
+            assert 'canary:station' in room.remote_participants
             assert json.loads(req.content)['mode']=='simulation'
             data={'ticket':'t','station':'station'}
         else:data={'robots':[{'id':'arm'}]}

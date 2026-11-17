@@ -4,10 +4,10 @@ Control a registered World Compute robot from a Python program on your computer.
 Use the same API for its simulated twin and physical arm. Source and primary
 maintainer: [World Compute](https://github.com/worldcompute001), team@worldcompute.org.
 
-**Prerelease:** not published to PyPI. The remote quickstart requires the companion
-backend SDK admission change and `WC_ENABLE_PYTHON_SDK=1`. Until deployed, live
-login with client `world-compute-python` will be rejected. No API keys are invented
-or required: sign in to your World Compute account using OAuth PKCE in your browser.
+**Prerelease:** not published to PyPI. Production SDK authentication is deployed.
+The standalone quickstart has passed against the remote simulated twin: OAuth
+login, LiveKit admission, measured reset completion, and stop/release. Physical
+SDK motion has not been tested. Sign in using OAuth PKCE; no API key is required.
 
 ## Install and run
 
