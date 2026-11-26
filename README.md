@@ -247,3 +247,32 @@ the bounded joint target to its kinematic arm, then renders the updated pose
 for the next inference. The toy is fixed in this scene. For a station run,
 change `--target sim` to `--target robot`. Robot runs use the station login,
 live cameras and controller. Omit `--execute` for a single prediction preview.
+
+### Trace a simulation experiment
+
+Use a new trace directory for each run. It contains the exact RGB inputs (PNG),
+replayable observation JSON, mapping, model contract, raw predictions, selected
+rows, converted radians, bounded targets, controller rejection/completion, and
+measured final pose. Artifacts include prompts and images; keep them local.
+
+```sh
+worldcompute run molmo --target sim --task --execute --steps 1 --seconds 30 \
+  --prompt "Move the gripper toward the blue cube" --trace-dir /tmp/wc-trial-1
+```
+
+`--seconds` bounds the task loop, not model startup, browser startup, or teardown.
+A rejection ends the run and is recorded; it is not silently retried or clamped
+by the simulation controller. The existing harness still scales joint waypoints
+to 0.02 radians and clips selected gripper outputs to 0–100; the trace records both
+transformations. `run_finished` means the loop returned, not that the task succeeded.
+
+To ask the model again using identical saved inputs (no motion):
+
+```sh
+worldcompute run molmo --task --prompt "Move the gripper toward the blue cube" \
+  --mapping /path/to/the-same-mapping.json \
+  --replay /tmp/wc-trial-1/0001-observation.json --trace-dir /tmp/wc-replay-1
+```
+
+Model responses may differ across requests. A mapping round trip verifies unit
+conversion algebra, not the physical calibration or camera extrinsics.

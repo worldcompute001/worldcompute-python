@@ -4,6 +4,7 @@ from datetime import datetime
 import math
 import time
 
+from . import trace
 from .client import WorldCompute
 from .harness import check_pair
 
@@ -134,12 +135,19 @@ async def rollout(policy, latest, arm, steps):
             # Scale the entire waypoint together to preserve the model's joint-space direction.
             scale = .02 / max(.02, *(abs(v) for v in delta.values()))
             target = {k: v + scale * delta[k] for k, v in before.items()}
+            trace.event('waypoint', step=step, measured_rad=before, wanted_rad=wanted,
+                        scale=scale, submitted_rad=target)
             print(f'Step {step}:', target, flush=True)
             if arm is None:
                 return 'preview'
             started = time.monotonic()
-            request = await arm.target(target)
-            await arm.wait(request, timeout=10)
+            try:
+                request = await arm.target(target)
+                result = await arm.wait(request, timeout=10)
+                trace.event('controller_completed', step=step, request=request, result=result)
+            except Exception as error:
+                trace.event('controller_failed', step=step, error_type=type(error).__name__)
+                raise
             try:
                 settled = await wait_for_tracking(arm, target)
             except TrackingIncomplete as error:
@@ -151,6 +159,7 @@ async def rollout(policy, latest, arm, steps):
                 after = time.time()
                 break
             stalled = False
+            trace.event('measured', step=step, joints_rad=settled)
             print(f'Measured after {time.monotonic()-started:.3f}s:', settled, flush=True)
             after = time.time()
     return 'step limit reached'

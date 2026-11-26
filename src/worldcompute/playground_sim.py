@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 import httpx
+from . import trace
 
 
 class PlaygroundSim:
@@ -116,6 +117,7 @@ class PlaygroundSim:
         target = dict((await self.state())['joints'], **values)
         response = await self.http.post('/sim-target', json=target)
         if response.status_code == 422:
+            trace.event('controller_rejected', status=422, reason=response.json())
             from .session import ControlsError
             raise ControlsError('Simulation controller rejected move: '+response.json()['error'])
         response.raise_for_status()

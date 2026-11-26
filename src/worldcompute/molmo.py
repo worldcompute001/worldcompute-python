@@ -6,6 +6,7 @@ import os
 import time
 from pathlib import Path
 
+from . import trace
 from .harness import run
 from .so101_mapping import arm_target, model_state, wc_targets
 from .task_rollout import run_task
@@ -27,8 +28,10 @@ def predict(session, prompt, mapping, views, joints, *, task=False, segment=Fals
         return np.frombuffer(camera['rgb'], dtype=np.uint8).reshape(
             camera['height'], camera['width'], 3)
 
+    model_joints = model_state(joints, mapping)
+    trace.observation(views, joints, model_joints)
     obs = so101.observation(side_frame=rgb('overhead'), wrist_frame=rgb('arm'),
-                            joint_positions=model_state(joints, mapping))
+                            joint_positions=model_joints)
     usage_event('request', frames=2)
     started = time.monotonic()
     chunk = session.predict(obs, instruction=prompt)
@@ -37,6 +40,8 @@ def predict(session, prompt, mapping, views, joints, *, task=False, segment=Fals
     usage_event('response', latency_ms=(time.monotonic() - started) * 1000,
                 action_values=int(rows.size), upload_bytes=getattr(timing, 'upload_bytes', None),
                 inference_ms=getattr(timing, 'server_inference_ms', None))
+    trace.event('prediction', shape=list(rows.shape),
+                actions=[[float(v) if np.isfinite(v) else None for v in row] for row in rows] if rows.ndim == 2 else None)
     if rows.shape != (30, 6):
         raise ValueError(f'Unexpected Molmo action shape {rows.shape}')
     if task:
@@ -46,8 +51,11 @@ def predict(session, prompt, mapping, views, joints, *, task=False, segment=Fals
         selected = np.array(rows[:3] if segment else rows[5:6], dtype=float, copy=True)
         if not np.isfinite(selected).all():
             raise ValueError('Nonfinite Molmo waypoint')
+        gripper_clipped = bool(np.any((selected[:, 5] < 0) | (selected[:, 5] > 100)))
         selected[:, 5] = np.clip(selected[:, 5], 0, 100)
         targets = wc_targets(selected, mapping)
+        trace.event('conversion', selected_indices=[0, 1, 2] if segment else [5],
+                    gripper_clipped=gripper_clipped, selected_model_actions=selected.tolist(), targets_rad=targets)
         return targets if segment else targets[0]
     return arm_target('shoulder_pan', rows[0, 0], mapping)
 
@@ -73,6 +81,7 @@ def replay(path, policy):
 def add_arguments(parser):
     parser.add_argument('--target', choices=('sim', 'robot'), default='robot', help='Observation and control destination')
     parser.add_argument('--prompt', required=True)
+    parser.add_argument('--trace-dir', type=Path, help='New private directory for images and execution events')
     parser.add_argument('--mapping', type=Path,
                         default=Path.home() / '.config/worldcompute/so100-mapping.json',
                         help='SO100 calibration mapping (default: %(default)s)')
@@ -87,6 +96,22 @@ def add_arguments(parser):
 
 
 def run_args(parser, args):
+    if args.trace_dir:
+        with trace.Trace(args.trace_dir):
+            trace.event('run', target=args.target, prompt=args.prompt, execute=args.execute,
+                        steps=args.steps, seconds=args.seconds, task=args.task)
+            try:
+                _run_args(parser, args)
+            except BaseException as error:
+                trace.event('run_failed', error_type=type(error).__name__)
+                raise
+            else:
+                trace.event('run_finished', task_success_evaluated=False)
+    else:
+        _run_args(parser, args)
+
+
+def _run_args(parser, args):
     if args.seconds is not None:
         if not args.task or args.replay:
             parser.error('--seconds requires a live --task run')
@@ -101,11 +126,14 @@ def run_args(parser, args):
     if not args.mapping.is_file():
         parser.error(f'Missing SO100 mapping at {args.mapping}. Supply --mapping PATH.')
     mapping = json.loads(args.mapping.read_text())
+    trace.event('mapping', mapping=mapping)
     import dreamscale
     with dreamscale.connect(model='molmoact2-so101', keep_warm=0, startup_timeout=120,
                             idle_timeout=180) as session:
         usage_event('session_ready')
         contract = session.contract
+        trace.event('contract', model='molmoact2-so101', action_dim=contract.action_dim,
+                    chunk_size=contract.chunk_size, action_hz=contract.action_hz)
         if (contract.action_dim, contract.chunk_size, contract.action_hz) != (6, 30, 30):
             raise ValueError('Unexpected Molmo action contract')
 
@@ -115,7 +143,9 @@ def run_args(parser, args):
         if args.replay:
             replay(args.replay, policy)
         elif args.task:
-            print('Run ended:', asyncio.run(run_task(policy, args.execute, args.steps, seconds=args.seconds or 90, target_name=args.target)))
+            result = asyncio.run(run_task(policy, args.execute, args.steps, seconds=args.seconds or 90, target_name=args.target))
+            trace.event('rollout_ended', reason=result)
+            print('Run ended:', result)
         else:
             asyncio.run(run(policy, args.execute, target_name=args.target))
     usage_event('session_closed')
