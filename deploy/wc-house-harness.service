@@ -1,0 +1,18 @@
+[Unit]
+Description=World Compute house Molmo worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=robot
+EnvironmentFile=/home/robot/.config/worldcompute/house-worker.env
+ExecStart=/home/robot/.local/share/wc-harness/venv/bin/python /home/robot/.local/share/wc-harness/house_worker.py
+Restart=always
+RestartSec=5
+KillMode=control-group
+KillSignal=SIGINT
+UMask=0077
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target
