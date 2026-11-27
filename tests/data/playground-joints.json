@@ -1,0 +1,134 @@
+[
+  {
+    "name": "shoulder_pan",
+    "parent": "base",
+    "child": "shoulder",
+    "xyz": [
+      0.0,
+      -0.0452,
+      0.0165
+    ],
+    "rpy": [
+      1.5708,
+      0.0,
+      0.0
+    ],
+    "axis": [
+      0.0,
+      1.0,
+      0.0
+    ],
+    "lower": -1.6,
+    "upper": 1.6
+  },
+  {
+    "name": "shoulder_lift",
+    "parent": "shoulder",
+    "child": "upper_arm",
+    "xyz": [
+      0.0,
+      0.1025,
+      0.0306
+    ],
+    "rpy": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "axis": [
+      1.0,
+      0.0,
+      0.0
+    ],
+    "lower": -1.5708,
+    "upper": 1.5708
+  },
+  {
+    "name": "elbow_flex",
+    "parent": "upper_arm",
+    "child": "lower_arm",
+    "xyz": [
+      0.0,
+      0.11257,
+      0.028
+    ],
+    "rpy": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "axis": [
+      1.0,
+      0.0,
+      0.0
+    ],
+    "lower": -1.6,
+    "upper": 1.4
+  },
+  {
+    "name": "wrist_flex",
+    "parent": "lower_arm",
+    "child": "wrist",
+    "xyz": [
+      0.0,
+      0.0052,
+      0.1349
+    ],
+    "rpy": [
+      -1.6,
+      0.0,
+      0.0
+    ],
+    "axis": [
+      1.0,
+      0.0,
+      0.0
+    ],
+    "lower": -1.67,
+    "upper": 1.67
+  },
+  {
+    "name": "wrist_roll",
+    "parent": "wrist",
+    "child": "gripper",
+    "xyz": [
+      0.0,
+      -0.0601,
+      0.0
+    ],
+    "rpy": [
+      0.0,
+      -3.14,
+      0.0
+    ],
+    "axis": [
+      0.0,
+      1.0,
+      0.0
+    ],
+    "lower": -3.14,
+    "upper": 3.14
+  },
+  {
+    "name": "gripper",
+    "parent": "gripper",
+    "child": "jaw",
+    "xyz": [
+      -0.0202,
+      -0.0244,
+      0.0
+    ],
+    "rpy": [
+      3.1416,
+      0.0,
+      3.35
+    ],
+    "axis": [
+      0.0,
+      0.0,
+      1.0
+    ],
+    "lower": -0.21,
+    "upper": 1.5
+  }
+]

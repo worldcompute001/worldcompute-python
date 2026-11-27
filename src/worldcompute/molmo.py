@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 
 from . import trace
+from .sim_mapping import load_mapping
 from .harness import run
 from .so101_mapping import arm_target, model_state, wc_targets
 from .task_rollout import run_task
@@ -83,8 +84,7 @@ def add_arguments(parser):
     parser.add_argument('--prompt', required=True)
     parser.add_argument('--trace-dir', type=Path, help='New private directory for images and execution events')
     parser.add_argument('--mapping', type=Path,
-                        default=Path.home() / '.config/worldcompute/so100-mapping.json',
-                        help='SO100 calibration mapping (default: %(default)s)')
+                        help='Mapping JSON; defaults to geometric sim profile or physical station calibration')
     parser.add_argument('--task', action='store_true', help='Use all joints and replan after each measured waypoint')
     parser.add_argument('--segment', action='store_true', help='Use the first three consecutive Molmo targets in task mode')
     parser.add_argument('--steps', type=int, default=12, help='Maximum waypoints for --task (1–30)')
@@ -123,9 +123,10 @@ def _run_args(parser, args):
         parser.error('--steps must be between 1 and 30')
     if not args.prompt.strip():
         parser.error('Provide a nonempty task prompt')
-    if not args.mapping.is_file():
-        parser.error(f'Missing SO100 mapping at {args.mapping}. Supply --mapping PATH.')
-    mapping = json.loads(args.mapping.read_text())
+    try:
+        mapping = load_mapping(args.target, args.mapping, replay=bool(args.replay))
+    except (ValueError, OSError) as error:
+        parser.error(str(error))
     trace.event('mapping', mapping=mapping)
     import dreamscale
     with dreamscale.connect(model='molmoact2-so101', keep_warm=0, startup_timeout=120,

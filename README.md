@@ -236,7 +236,8 @@ limits do not establish whether a grasp succeeded.
 
 Install the checkout with `pip install -e '.[molmo,sim]'`, with Google Chrome
 installed and the local World Compute playground running on port 18835.
-The same DreamScale credentials and SO100 mapping are used for both targets.
+Both targets use DreamScale credentials. Simulation selects a built-in geometric
+mapping; robot mode reads the separate physical station calibration.
 
 ```sh
 worldcompute run molmo --target sim --task --execute --seconds 15 --prompt "Can you pick up the toy?"
@@ -276,3 +277,26 @@ worldcompute run molmo --task --prompt "Move the gripper toward the blue cube" \
 
 Model responses may differ across requests. A mapping round trip verifies unit
 conversion algebra, not the physical calibration or camera extrinsics.
+
+
+### Simulation coordinates and cameras
+
+`--target sim` now selects `playground-so100-geometric-v1` without reading the
+physical calibration file. `--target robot` retains its physical-file default.
+Explicit overrides are checked: a physical mapping cannot be used for live sim
+and a mapping marked `target: sim` cannot be used for live robot execution.
+Replay requires the recorded run's explicit `--mapping`, because old recordings
+may use the previous experimental calibration.
+
+The simulation mapping is derived from the renderer's phosphobot-radians-v1 joint
+frames and DreamScale's SO101 new-calibration chain. It matches upper/lower link
+vectors, tool approach and jaw hinge orientation under a fixed base yaw change.
+Tests compare 64 varied poses against those two chains. SO100/SO101 distal link
+lengths still differ; this does not make their full tool positions identical or
+qualify all poses for a learned model. Gripper 0–100 normalizes the simulated
+limits −0.21 to 1.5 rad, not measured contact aperture.
+
+The synthetic scene camera uses an oblique view. The wrist camera is fixed to
+the gripper at a declared local transform and looks toward the jaw workspace.
+Neither camera tracks the cube. These synthetic viewpoints improve visibility;
+they are not estimates of the physical mounts or verified training viewpoints.
