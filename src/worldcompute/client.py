@@ -24,6 +24,15 @@ class WorldCompute:
         self._owns_http = http is None
         self.room_factory = room_factory
 
+    @classmethod
+    def for_target(cls, target):
+        if target == 'sim':
+            from .playground_sim import PlaygroundSim
+            return PlaygroundSim()
+        if target == 'robot':
+            return cls()
+        raise ValueError('target must be sim or robot')
+
     async def login(self, *, physical=False, open_browser=True):
         from .login import authorize
         tokens = await authorize(self.http, self.base_url, physical=physical, open_browser=open_browser)
@@ -58,6 +67,22 @@ class WorldCompute:
     async def robots(self):
         return (await self._request('GET', '/api/sdk/v1/robots'))['robots']
 
+    def observation_stream(self):
+        """Keep one viewing connection open. Call latest() inside the async context."""
+        from .observation import observation_stream
+        return observation_stream(self)
+
+    async def observe(self, *, timeout=15):
+        """Read video and measured station telemetry without creating a control session.
+
+        Cameras retain publisher identity and track SID. Capture timestamps can be
+        absent. Callers must validate source times before using frames for inference.
+        """
+        if not isinstance(timeout, (int, float)) or not 0 < timeout <= 60:
+            raise ValueError('timeout must be between 0 and 60 seconds')
+        from .observation import snapshot
+        return await snapshot(self, timeout=timeout)
+
     @asynccontextmanager
     async def robot(self, robot_id, *, mode='simulation'):
         from uuid import uuid4
@@ -83,15 +108,18 @@ class WorldCompute:
                 await asyncio.sleep(.1)
             admission = await self._request('POST', '/api/sdk/v1/robots/'+quote(robot_id,safe='')+'/sessions', {
                 'request_id':str(uuid4()), 'mode':mode, 'identity':live['identity'], 'binding':live['binding']})
+            sent_at = time.monotonic()
             created = json.loads(await room.local_participant.perform_rpc(
                 destination_identity=admission['station'], method='wc.controls.v1',
                 payload=json.dumps({'ticket':admission['ticket']}), response_timeout=5))
+            received_at = time.monotonic()
             if created['status'] not in (200,201):
                 raise ControlsError('Session creation rejected')
             body = created['body']
             if body['robot_id'] != robot_id or body['mode'] != mode:
                 raise ControlsError('Session identity mismatch; command not sent')
-            session = RobotSession(room.local_participant, admission['station'], body, created.get('server_time'))
+            session = RobotSession(room.local_participant, admission['station'], body, created.get('server_time'),
+                                   clock_window=(sent_at, received_at))
             # Prevent continued input after disconnect; never reconnect/replay automatically.
             if hasattr(room, 'on'):
                 room.on('disconnected', lambda *args: setattr(session, 'failure', ControlsError('LiveKit disconnected')))

@@ -1,6 +1,7 @@
 """The existing wc.controls.v1 contract, without HTTP or hardware ownership."""
 import asyncio
 import json
+import math
 import time
 from datetime import datetime, timezone
 from uuid import uuid4
@@ -17,10 +18,12 @@ class OutcomeUnknown(ControlsError):
 
 
 class RobotSession:
-    def __init__(self, participant, station, created, server_time=None):
+    def __init__(self, participant, station, created, server_time=None, *, clock_window=None):
         self.participant, self.station = participant, station
         self.id, self.mode = created['session_id'], created['mode']
         self.robot_id = created['robot_id']
+        self._server_time = server_time
+        self._clock_window = clock_window
         self.offset = (server_time - time.time()) if server_time else 0
         self.closed = False
         self.failure = None
@@ -28,6 +31,15 @@ class RobotSession:
         self.stream_id = None
         self.stream_kind = None
         self._renewal = None
+
+    def station_time_bounds(self):
+        """Bound station UTC using its admission response and local monotonic elapsed time."""
+        if (self._clock_window is None or type(self._server_time) not in (int, float)
+                or not math.isfinite(self._server_time) or self._server_time <= 0):
+            raise ControlsError('Missing valid station clock sample')
+        sent, received = self._clock_window
+        now = time.monotonic()
+        return self._server_time + (now - received), self._server_time + (now - sent)
 
     async def _rpc(self, operation, body=None):
         if self.closed:

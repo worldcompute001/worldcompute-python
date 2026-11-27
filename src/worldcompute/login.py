@@ -17,7 +17,9 @@ async def authorize(http, origin, *, physical=False, open_browser=True, timeout=
     resource = metadata.json()['resource']
     discovery = await http.get('/.well-known/oauth-authorization-server/oauth')
     discovery.raise_for_status()
-    issuer = discovery.json()['issuer']
+    authorization = discovery.json()
+    issuer = authorization['issuer']
+    authorization_endpoint = authorization['authorization_endpoint']
     verifier = secrets.token_urlsafe(48)
     state = secrets.token_urlsafe(32)
     challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b'=').decode()
@@ -49,9 +51,9 @@ async def authorize(http, origin, *, physical=False, open_browser=True, timeout=
             await writer.wait_closed()
 
     server = await asyncio.start_server(callback, '127.0.0.1', 8765, limit=8192)
-    # Account sign-in returns to the canonical issuer; start there so its
-    # host-only interaction cookie survives that round trip.
-    url = issuer.rstrip('/')+'/auth?'+urlencode({'client_id':CLIENT_ID, 'response_type':'code',
+    # The browser endpoint may use the public site while the issuer stays stable.
+    # Follow discovery so account sign-in and interaction cookies share that site.
+    url = authorization_endpoint+'?'+urlencode({'client_id':CLIENT_ID, 'response_type':'code',
         'redirect_uri':REDIRECT, 'scope':'robot:read simulator:control offline_access'+(' robot:control' if physical else ''),
         'resource':resource, 'state':state, 'code_challenge':challenge, 'code_challenge_method':'S256'})
     try:

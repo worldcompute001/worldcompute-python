@@ -24,8 +24,9 @@ Requires Python 3.11+, an online station, and outbound HTTPS/WebRTC connectivity
 Anyone can create a World Compute account and sign in. Browser sign-in and consent
 give the SDK scoped, in-memory tokens through OAuth PKCE. There is no API key to create. Use a local desktop; login listens only
 on 127.0.0.1:8765. That port must be free. Complete login within ten minutes; use the newly opened
-page rather than an older sign-in tab. Login starts on the canonical OAuth issuer
-to preserve its cookies across account sign-in. It does not work through an arbitrary
+page rather than an older sign-in tab. Login uses the authorization endpoint advertised by World Compute, currently
+`https://worldcompute.org/oauth/auth`, so it shares the regular account sign-in.
+The callback still verifies the separately advertised OAuth issuer. It does not work through an arbitrary
 remote notebook without forwarding its loopback callback.
 
 ```bash
@@ -54,6 +55,35 @@ the playground queue. If another session owns the arm, wait for your turn.
 A physical reset requires fresh motor readings and valid calibrated limits. Reset is not
 an out-of-range recovery routine; missing motor limits must be resolved by the
 operator. Stop holds position; it does not remove motor power.
+
+## Build a two-camera harness (0.1.0a2 release candidate)
+
+Install this checkout with `python -m pip install .` or install the built
+0.1.0a2 wheel into a Python 3.11+ environment. Run `worldcompute-harness`
+on the machine where you can complete browser sign-in. The default reads
+the SO100 overhead and wrist cameras and joint encoders, and previews a target
+equal to the current shoulder position.
+
+Supply your own synchronous Python function with the signature
+`predict(views, joints) -> float`. Each view in `views["overhead"]` and
+`views["arm"]` provides RGB24 bytes in `rgb`, pixel `width` and `height`,
+and a source timestamp in microseconds. Joint values and the returned absolute
+shoulder-pan target are in World Compute radians. Translate model units and
+joint ordering inside your policy. For example, with an importable module
+named `my_policy`, run:
+
+```bash
+worldcompute-harness --policy my_policy:predict
+```
+
+After reviewing the workspace and the preview, adding `--execute` runs a fresh
+prediction and requests physical access to send one shoulder-pan target capped
+at 0.02 rad from the measured position. The harness checks camera freshness,
+input age and joint drift, then prints the controller result and measured delta.
+A prediction older than five seconds is discarded at dispatch. Warm slow-starting
+models before capture. For multi-step harnesses, use
+`async with wc.observation_stream() as latest` and call `latest()` for snapshots
+on the same connection. Check timestamps before each action.
 
 ## Your own program
 
@@ -117,3 +147,161 @@ Tests use isolated HTTP/LiveKit doubles and do not qualify physical movement.
 Backend tests separately exercise OAuth and admission. Live end-to-end simulation
 and attended physical testing must be reported separately. See [release instructions](docs/releasing.md) for GitHub-to-PyPI trusted publishing.
 Publishing requires the World Compute PyPI owner to register the publisher first.
+
+## Camera observations and DreamScale preview (local development)
+
+`await wc.observe(timeout=15)` opens the existing viewing connection and returns
+RGB camera bytes with publisher identity, track SID/name, source capture time
+when available, arrival time and the station's `wc.canary.state.v1` telemetry.
+It requests only `/api/sdk/v1/live-token`. It gathers an observation over the
+requested window and disconnects. Check each source's freshness and clock
+before using it in a live policy. Missing telemetry is returned as `None`.
+
+Capture both camera views and measured telemetry using account authorization:
+
+```bash
+python examples/capture_observation.py --output /tmp/wc-observation
+```
+
+The output contains PPM images and `observation.json`. Review the actual views
+before selecting the scene and wrist indexes. Capture timestamps and camera
+identities stay in the manifest. Availability of two physical cameras does not
+establish that both publish into the viewing room.
+
+`examples/dreamscale_preview.py` converts a saved observation for
+`molmoact2-so101`. Supply an explicit mapping JSON with `joints` keyed by the
+five WC arm joint names, each containing `sign` (1 or -1) and
+`offset_degrees`, plus `gripper_closed_rad` and `gripper_open_rad`. Establish
+these values against the provider's calibration convention and this unit's
+saved calibration. The existing WC controller continues to own motor offsets.
+An optional `configuration_revision` is compared when the recorded state also
+provides one. Scene-camera placement must match the model profile.
+
+```bash
+python examples/dreamscale_preview.py /tmp/wc-observation/observation.json \
+  --mapping /path/to/qualified-mapping.json --scene 0 --wrist 1 \
+  --prompt 'Pick up the block' --output /tmp/input-preview.json
+```
+
+The default validates and saves the converted input locally. Adding `--predict`
+opens one billable provider session, requests one prediction, saves raw actions
+and the inverse conversion to WC named radians, then closes with `keep_warm=0`.
+Run in an environment containing the reviewed `dreamscale==0.1.0a299`, Pillow
+and NumPy, with the existing DreamScale login. The script presents the recorded
+scene as a new replay observation and retains original timing in the manifest.
+This example has no action dispatch. Physical compatibility and the station's
+chunk timing still require qualification before adding execution.
+
+A recorded-input experiment on 2026-11-19 captured two 1280×720 tracks (`overhead`
+and `arm`) with 30 ms capture skew plus measured SO100 state. MolmoAct2 returned
+30 six-value absolute actions at 30 Hz, with 168 ms observation-to-action latency
+excluding startup. The station's saved Phosphobot calibration exactly matched
+its reset snapshot. Its inverse transform reproduced the saved encoder positions.
+The experimental projection used LeRobot 0.6.1's range-centered degrees, full-turn
+wrist-roll convention and the unit's gripper endpoints. Overhead placement,
+wrist lighting, calibration-range transfer and physical compatibility remain to
+be qualified. The run dispatched no robot actions, and provider session listing
+was empty after cleanup. An initial client contract-field error was corrected
+before the successful prediction; the earlier session was also released.
+
+## Run the Molmo harness
+
+Install the wheel with its `molmo` extra or run `python -m pip install '.[molmo]'`
+from this checkout. Sign in to DreamScale and supply the station's calibrated
+SO100-to-SO101 mapping described above. Each invocation opens one hosted
+MolmoAct2 session and requests one prediction.
+
+```bash
+mkdir -p ~/.config/worldcompute
+cp /path/to/model-mapping.json ~/.config/worldcompute/so100-mapping.json
+worldcompute run molmo --prompt "Turn slightly toward the blue toy"
+```
+
+The default uses the live overhead and wrist views and prints the predicted and
+bounded shoulder angles. Add `--execute` for one physical shoulder target using
+the existing SDK session checks and cleanup. For a hardware-free run, pass
+`--replay /path/to/observation.json` from the camera capture example. The command
+exits after one inference. A playground worker can launch it with an argument
+list, passing the prompt as a single argument.
+
+### Attended multi-joint tasks
+
+`worldcompute run molmo --task --prompt "Pick up the blue toy"` previews a coordinated
+waypoint from the five arm joints and gripper. Add `--execute` to run an attended
+task. The runner samples the sixth setpoint of each prediction, constrains the
+gripper to its calibrated opening range, and scales the joint displacement so
+each waypoint is at most 0.02 rad per joint. After each measured completion it
+requires newer camera frames and telemetry before predicting again. Use Ctrl+C
+to end an attempt when the task is done or to interrupt it. Cleanup requests
+hold and releases the session. A step limit (default 12, override with
+`--steps 1..30`) or the execution deadline (default 90 seconds, shorten with e.g. `--seconds 15`) ends the attempt. The timer starts after model and station setup; hold and release run on exit. These
+limits do not establish whether a grasp succeeded.
+
+### Run Molmo in the local playground
+
+Install the checkout with `pip install -e '.[molmo,sim]'`, with Google Chrome
+installed and the local World Compute playground running on port 18835.
+Both targets use DreamScale credentials. Simulation selects a built-in geometric
+mapping; robot mode reads the separate physical station calibration.
+
+```sh
+worldcompute run molmo --target sim --task --execute --seconds 15 --prompt "Can you pick up the toy?"
+```
+
+The SDK renders overhead and wrist RGB images from the playground scene, applies
+the bounded joint target to its kinematic arm, then renders the updated pose
+for the next inference. The toy is fixed in this scene. For a station run,
+change `--target sim` to `--target robot`. Robot runs use the station login,
+live cameras and controller. Omit `--execute` for a single prediction preview.
+
+### Trace a simulation experiment
+
+Use a new trace directory for each run. It contains the exact RGB inputs (PNG),
+replayable observation JSON, mapping, model contract, raw predictions, selected
+rows, converted radians, bounded targets, controller rejection/completion, and
+measured final pose. Artifacts include prompts and images; keep them local.
+
+```sh
+worldcompute run molmo --target sim --task --execute --steps 1 --seconds 30 \
+  --prompt "Move the gripper toward the blue cube" --trace-dir /tmp/wc-trial-1
+```
+
+`--seconds` bounds the task loop, not model startup, browser startup, or teardown.
+A rejection ends the run and is recorded; it is not silently retried or clamped
+by the simulation controller. The existing harness still scales joint waypoints
+to 0.02 radians and clips selected gripper outputs to 0–100; the trace records both
+transformations. `run_finished` means the loop returned, not that the task succeeded.
+
+To ask the model again using identical saved inputs (no motion):
+
+```sh
+worldcompute run molmo --task --prompt "Move the gripper toward the blue cube" \
+  --mapping /path/to/the-same-mapping.json \
+  --replay /tmp/wc-trial-1/0001-observation.json --trace-dir /tmp/wc-replay-1
+```
+
+Model responses may differ across requests. A mapping round trip verifies unit
+conversion algebra, not the physical calibration or camera extrinsics.
+
+
+### Simulation coordinates and cameras
+
+`--target sim` now selects `playground-so100-geometric-v1` without reading the
+physical calibration file. `--target robot` retains its physical-file default.
+Explicit overrides are checked: a physical mapping cannot be used for live sim
+and a mapping marked `target: sim` cannot be used for live robot execution.
+Replay requires the recorded run's explicit `--mapping`, because old recordings
+may use the previous experimental calibration.
+
+The simulation mapping is derived from the renderer's phosphobot-radians-v1 joint
+frames and DreamScale's SO101 new-calibration chain. It matches upper/lower link
+vectors, tool approach and jaw hinge orientation under a fixed base yaw change.
+Tests compare 64 varied poses against those two chains. SO100/SO101 distal link
+lengths still differ; this does not make their full tool positions identical or
+qualify all poses for a learned model. Gripper 0–100 normalizes the simulated
+limits −0.21 to 1.5 rad, not measured contact aperture.
+
+The synthetic scene camera uses an oblique view. The wrist camera is fixed to
+the gripper at a declared local transform and looks toward the jaw workspace.
+Neither camera tracks the cube. These synthetic viewpoints improve visibility;
+they are not estimates of the physical mounts or verified training viewpoints.
